@@ -317,12 +317,20 @@ export default function CRM() {
     setUploadingDoc(true);
     try {
       const path = `cliente_${selectedClient.id}/${Date.now()}_${file.name}`;
-      await fetch(`${SUPABASE_URL}/storage/v1/object/documentos/${path}`, {
+      const formData = new FormData();
+      formData.append("", file);
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/documentos/${path}`, {
         method: "POST",
-        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+        body: formData,
       });
-      await loadDocs(selectedClient.id);
+      if (!res.ok) {
+        const err = await res.text();
+        console.error("Upload error:", err);
+        alert("Error al subir: " + err);
+      } else {
+        await loadDocs(selectedClient.id);
+      }
     } catch (e) { console.error(e); alert("Error al subir el archivo"); }
     setUploadingDoc(false);
   }
