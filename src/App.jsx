@@ -1,3 +1,4 @@
+
 import { useState, useMemo, useEffect } from "react";
 
 const SUPABASE_URL = "https://jaidnrxpbmqosiqfqzrg.supabase.co";
@@ -340,6 +341,8 @@ export default function CRM() {
   function getDocUrl(filePath) {
     return `${SUPABASE_URL}/storage/v1/object/documentos/${filePath}?apikey=${SUPABASE_KEY}`;
   }
+
+  async function saveClient(data) {
     try {
       if (editingClient) {
         const [updated] = await api(`clients?id=eq.${editingClient.id}`, { method: "PATCH", body: JSON.stringify({ name: data.name, email: data.email, phone: data.phone, stage: data.stage, notes: data.notes, updated_at: new Date().toISOString() }) });
