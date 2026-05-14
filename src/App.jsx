@@ -263,6 +263,9 @@ export default function CRM() {
   const [editingClient, setEditingClient] = useState(null);
   const [showFUModal, setShowFUModal] = useState(false);
   const [fuForm, setFuForm] = useState({});
+  const [docs, setDocs] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -294,7 +297,49 @@ export default function CRM() {
     };
   }, [clients]);
 
-  async function saveClient(data) {
+  async function loadDocs(clientId) {
+    setDocsLoading(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/documentos`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ prefix: `cliente_${clientId}/`, limit: 100 }),
+      });
+      const data = await res.json();
+      setDocs(Array.isArray(data) ? data : []);
+    } catch (e) { console.error(e); setDocs([]); }
+    setDocsLoading(false);
+  }
+
+  async function uploadDoc(file) {
+    if (!file || !selectedClient) return;
+    setUploadingDoc(true);
+    try {
+      const path = `cliente_${selectedClient.id}/${Date.now()}_${file.name}`;
+      await fetch(`${SUPABASE_URL}/storage/v1/object/documentos/${path}`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      await loadDocs(selectedClient.id);
+    } catch (e) { console.error(e); alert("Error al subir el archivo"); }
+    setUploadingDoc(false);
+  }
+
+  async function deleteDoc(filePath) {
+    if (!confirm("¿Eliminar este archivo?")) return;
+    try {
+      await fetch(`${SUPABASE_URL}/storage/v1/object/documentos/${filePath}`, {
+        method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+      });
+      await loadDocs(selectedClient.id);
+    } catch (e) { console.error(e); }
+  }
+
+  function getDocUrl(filePath) {
+    return `${SUPABASE_URL}/storage/v1/object/documentos/${filePath}?apikey=${SUPABASE_KEY}`;
+  }
     try {
       if (editingClient) {
         const [updated] = await api(`clients?id=eq.${editingClient.id}`, { method: "PATCH", body: JSON.stringify({ name: data.name, email: data.email, phone: data.phone, stage: data.stage, notes: data.notes, updated_at: new Date().toISOString() }) });
@@ -462,7 +507,7 @@ export default function CRM() {
             </div>
 
             <div style={{ display: "flex", padding: "0 24px", background: "#fff", borderBottom: "1px solid #e8e5e0" }}>
-              {[["info", "📋 Info"], ["viajes", "✈ Viajes"], ["seguimiento", "🔔 Seguimiento"]].map(([t, l]) => <button key={t} className={`tbb ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>{l}</button>)}
+              {[["info", "📋 Info"], ["viajes", "✈ Viajes"], ["seguimiento", "🔔 Seguimiento"], ["docs", "📁 Documentos"]].map(([t, l]) => <button key={t} className={`tbb ${activeTab === t ? "active" : ""}`} onClick={() => { setActiveTab(t); if (t === "docs") loadDocs(selectedClient.id); }}>{l}</button>)}
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
@@ -497,6 +542,39 @@ export default function CRM() {
                     <div className={`fuc ${f.done ? "done" : ""}`} onClick={() => toggleFU(selectedClient.id, f.id, f.done)}>{f.done ? "✓" : ""}</div>
                     <div style={{ flex: 1 }}><div style={{ fontSize: 13.5, textDecoration: f.done ? "line-through" : "none", color: f.done ? "#8c8680" : "#1a1814" }}>{f.note}</div>{f.date && <div style={{ fontSize: 11.5, color: "#8c8680", marginTop: 2 }}>{new Date(f.date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "long" })}</div>}</div>
                   </div>)}
+              </>}
+
+              {activeTab === "docs" && <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>Documentos</div>
+                  <label style={{ background: "#1a1814", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
+                    {uploadingDoc ? "Subiendo..." : "+ Subir archivo"}
+                    <input type="file" style={{ display: "none" }} onChange={e => e.target.files[0] && uploadDoc(e.target.files[0])} accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" />
+                  </label>
+                </div>
+                <div style={{ fontSize: 12, color: "#8c8680", marginBottom: 14 }}>PDF, imágenes, Word, Excel — todo vale</div>
+                {docsLoading ? <div className="es"><div style={{ fontSize: 30, marginBottom: 10 }}>⏳</div>Cargando...</div>
+                  : docs.length === 0 ? <div className="es"><div style={{ fontSize: 36, marginBottom: 10 }}>📁</div>Sin documentos adjuntos</div>
+                  : docs.filter(d => d.name).map(d => {
+                    const filePath = `cliente_${selectedClient.id}/${d.name}`;
+                    const displayName = d.name.replace(/^\d+_/, "");
+                    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(d.name);
+                    const isPdf = /\.pdf$/i.test(d.name);
+                    const icon = isPdf ? "📄" : isImage ? "🖼" : "📎";
+                    const sizeKB = d.metadata?.size ? Math.round(d.metadata.size / 1024) : null;
+                    return (
+                      <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#fff", border: "1px solid #e8e5e0", borderRadius: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 22 }}>{icon}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
+                          {sizeKB && <div style={{ fontSize: 11.5, color: "#8c8680", marginTop: 2 }}>{sizeKB} KB</div>}
+                        </div>
+                        <a href={getDocUrl(filePath)} target="_blank" rel="noreferrer" style={{ background: "#f0ede8", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", textDecoration: "none", color: "#1a1814", fontWeight: 600 }}>Ver</a>
+                        <button onClick={() => deleteDoc(filePath)} style={{ background: "#fee2e2", color: "#dc2626", border: "none", borderRadius: 6, padding: "6px 10px", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>🗑</button>
+                      </div>
+                    );
+                  })
+                }
               </>}
             </div>
           </div>}
