@@ -1,4 +1,3 @@
-
 import { useState, useMemo, useEffect } from "react";
 
 const SUPABASE_URL = "https://jaidnrxpbmqosiqfqzrg.supabase.co";
@@ -316,13 +315,12 @@ export default function CRM() {
     if (!file || !selectedClient) return;
     setUploadingDoc(true);
     try {
-      const path = `cliente_${selectedClient.id}/${Date.now()}_${file.name}`;
-      const formData = new FormData();
-      formData.append("", file);
+      const safeName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `cliente_${selectedClient.id}/${Date.now()}_${safeName}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/documentos/${path}`, {
         method: "POST",
-        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
-        body: formData,
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
+        body: file,
       });
       if (!res.ok) {
         const err = await res.text();
